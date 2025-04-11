@@ -1,0 +1,300 @@
+
+
+#define BLYNK_PRINT Serial
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <BlynkSimpleEsp32.h>
+
+#include <Wire.h> 
+#include <LCD_I2C.h>
+LCD_I2C lcd(0x27);
+
+#define BLYNK_TEMPLATE_ID " "
+#define BLYNK_TEMPLATE_NAME " "
+#define BLYNK_AUTH_TOKEN " "
+
+char ssid[] = " ";
+char pass[] = " ";
+char auth[] = BLYNK_AUTH_TOKEN;
+
+#include <ThingSpeak.h>
+#define BLYNK_PRINT Serial
+#include <WiFi.h>
+#include <WiFiClient.h>
+
+char thingSpeakAddress[] = "api.thingspeak.com";
+unsigned long channelID =  ;
+char* readAPIKey = " ";
+char* writeAPIKey = " ";
+
+unsigned int dataFieldOne = 1;
+unsigned int dataFieldTwo = 2;
+unsigned int dataFieldThree = 3;
+unsigned int dataFieldFour = 4;
+
+unsigned int m = 0, act = 0, val, val1, val2, val3, val4, val5;
+WiFiClient client;
+String inputString = "";
+unsigned char a[200];
+
+
+#include "DFRobot_BloodOxygen_S.h"
+#include <Wire.h>
+#define I2C_ADDRESS 0x57  // MAX30102 default I2C address
+DFRobot_BloodOxygen_S_I2C MAX30102(&Wire, I2C_ADDRESS);
+
+
+//------------------------------ACC SENSOR -------------------------------
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <Wire.h>
+Adafruit_MPU6050 mpu;
+
+//---------------------------------MLX SENSOR ----------------------------
+#include <Wire.h>
+#include <Adafruit_MLX90614.h>
+Adafruit_MLX90614 mlx = Adafruit_MLX90614();
+
+int bp,spo2,xval,t,iotsend,spo02new,bpnew;
+void setup()
+{
+  Serial.begin(115200);
+  Wire.begin(21, 22);  // SDA = GPIO21, SCL = GPIO22 (Default I2C pins for ESP32)
+  lcd.begin();
+  lcd.backlight();
+  lcd.setCursor(0,0);
+  lcd.print("NEO-NATAAL VITAL");
+  lcd.setCursor(0,1);
+  lcd.print("MONITERING SYSTEM");
+  spo02new=0;bpnew=0;
+  if (!MAX30102.begin())
+  {
+    Serial.println("Sensor init failed! Check connections.");
+    while (1) delay(1000);
+  }
+
+  Serial.println("Sensor initialized successfully!");
+  Serial.println("Starting measurements...");
+  MAX30102.sensorStartCollect();
+
+
+//------------------------------------------acc sensor 
+  while (!Serial)
+  delay(10); // will pause Zero, Leonardo, etc until serial console opens
+  Serial.println("Adafruit MPU6050 test!");
+
+  // Try to initialize!
+  if (!mpu.begin()) {
+    Serial.println("Failed to find MPU6050 chip");
+    while (1) {
+      delay(10);
+    }
+  }
+//---------------------------------------------MLX SENSOR
+  Serial.println("Adafruit MLX90614 test");  
+  mlx.begin(); 
+  ThingSpeak.begin( client );
+  Blynk.begin(auth, ssid, pass, "blynk.cloud", 80);
+  lcd.clear();
+    
+}
+void loop()
+{
+  MAX30102.getHeartbeatSPO2();
+
+  Serial.print("SPO2: ");
+  Serial.print(MAX30102._sHeartbeatSPO2.SPO2);
+  Serial.println("%");
+  spo2=(MAX30102._sHeartbeatSPO2.SPO2);
+   if(spo2>=90)
+   {
+    spo02new=spo2;
+   }
+  lcd.setCursor(0,0); 
+  lcd.print("o2:");
+  if(spo02new <= 9){lcd.print("00");lcd.print(spo02new);}
+  else if(spo02new <= 99){lcd.print("0");lcd.print(spo02new);}
+  else if(spo02new <= 999){lcd.print("");lcd.print(spo02new);}
+
+
+  Serial.print("Heart Rate: ");
+  Serial.print(MAX30102._sHeartbeatSPO2.Heartbeat);
+  Serial.println(" BPM");
+  bp=(MAX30102._sHeartbeatSPO2.Heartbeat);
+   if(bp>=90)
+   {
+    bpnew=bp;
+   }
+  lcd.setCursor(10, 0); 
+  lcd.print("HR:");
+  if(bpnew <= 9){lcd.print("00");lcd.print(bpnew);}
+  else if(bpnew <= 99){lcd.print("0");lcd.print(bpnew);}
+  else if(bpnew <= 999){lcd.print("");lcd.print(bpnew);}
+
+
+
+//Bradycardia - below 100 bpm 
+if(bpnew>=1 && bpnew<=100)
+{
+  Serial.print("Bradycardia");
+  Blynk.virtualWrite(V5,"Bradycardia");
+  delay(3000);
+  Blynk.virtualWrite(V5,"               "); 
+  
+}
+
+//Normal rate - 120 - 160 bpm 
+if(bpnew>=120 && bpnew<=120 )
+{
+  Serial.print("Normal");
+  Blynk.virtualWrite(V5,"Normal");
+  delay(3000);
+  Blynk.virtualWrite(V5,"               "); 
+  
+}
+
+//Tachycardia - Above 180 bpm
+
+if(bpnew>=120 && bpnew<=180)
+{
+  Serial.print("Tachycardia");
+  Blynk.virtualWrite(V5,"Tachycardia");
+  delay(3000);
+  Blynk.virtualWrite(V5,"               "); 
+}
+
+
+
+
+
+//  Serial.print("Board Temperature: ");
+//  Serial.print(MAX30102.getTemperature_C());
+//  Serial.println(" ℃");
+
+  // The sensor updates the data every 4 seconds
+  delay(2000);
+
+//-----------------------------------------------------------acc sensor 
+
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  /* Print out the values */
+  Serial.print("Acceleration X: ");
+  Serial.print(a.acceleration.x);
+  Serial.print(", Y: ");
+  Serial.print(a.acceleration.y);
+  Serial.print(", Z: ");
+  Serial.print(a.acceleration.z);
+  Serial.println(" m/s^2");
+
+  xval=(a.acceleration.x);
+  lcd.setCursor(0, 1); 
+  lcd.print("X:");
+  lcd.setCursor(2, 1); 
+  lcd.print(xval); 
+  
+//  if(xval <= 9){lcd.print("00");lcd.print(xval);}
+//  else if(xval <= 99){lcd.print("0");lcd.print(xval);}
+//  else if(xval <= 999){lcd.print("");lcd.print(xval);}
+
+  Serial.print("Rotation X: ");
+  Serial.print(g.gyro.x);
+  Serial.print(", Y: ");
+  Serial.print(g.gyro.y);
+  Serial.print(", Z: ");
+  Serial.print(g.gyro.z);
+  Serial.println(" rad/s");
+
+  Serial.print("Temperature: ");
+  Serial.print(temp.temperature);
+  Serial.println(" degC");
+
+  Serial.println("");
+  delay(500);
+//------------------------------------------------------MLX SENSOR---------------
+
+
+  Serial.print("Ambient = "); Serial.print(mlx.readAmbientTempC()); 
+  Serial.print("*C\tObject = "); Serial.print(mlx.readObjectTempC()); Serial.println("*C");
+  Serial.print("Ambient = "); Serial.print(mlx.readAmbientTempF()); 
+  Serial.print("*F\tObject = "); Serial.print(mlx.readObjectTempF()); Serial.println("*F");
+  Serial.println();
+  delay(500);
+
+  
+  t=(mlx.readObjectTempC());
+  lcd.setCursor(10, 1); 
+  lcd.print("T:");
+  if(t <= 9){lcd.print("00");lcd.print(t);}
+  else if(t <= 99){lcd.print("0");lcd.print(t);}
+  else if(t <= 999){lcd.print("");lcd.print(t);}
+//Hypothermia - 36 - 36.4 °C
+//Hyperthermia - above 37.5 °C
+//Normal range - 32 - 35.9 
+
+if(t>=32 && t<=35.9)
+{
+  Serial.print("normal");
+  Blynk.virtualWrite(V6,"Normal");
+  delay(3000);
+  Blynk.virtualWrite(V6,"               "); 
+}
+
+
+if(t>=36 && t<=37.1 )
+{
+  Serial.print("Hypothermia");
+  Blynk.virtualWrite(V6,"Hypothermia");
+  delay(3000);
+  Blynk.virtualWrite(V6,"               "); 
+  
+}
+
+if(t>=37.2)
+{
+  Blynk.logEvent("msg","BODY TEMP HIGH!");  
+  Serial.print("Hyperthermia");
+  Blynk.virtualWrite(V6,"Hyperthermia");
+  delay(3000);
+  Blynk.virtualWrite(V6,"               "); 
+}
+
+
+
+
+
+
+ if(iotsend==1){
+ Serial.println("IOT SEND DATA");
+ Blynk.virtualWrite(V0,spo02new);
+ Blynk.virtualWrite(V1,bpnew);
+ Blynk.virtualWrite(V2,xval);
+ Blynk.virtualWrite(V3,t);
+
+}
+write2TSData( channelID, dataFieldOne, spo02new, dataFieldTwo,bpnew, dataFieldThree,xval,dataFieldFour,t); 
+   delay(200);
+   Blynk.run();
+}
+
+int write2TSData( long TSChannel, unsigned int TSField1, float field1Data, unsigned int TSField2, float field2Data,unsigned int TSField3, float field3Data,unsigned int TSField4, float field4Data)
+{
+  ThingSpeak.setField( TSField1, field1Data );
+  ThingSpeak.setField( TSField2, field2Data );
+  ThingSpeak.setField( TSField3, field3Data );
+  ThingSpeak.setField( TSField4, field4Data );
+
+  int writeSuccess = ThingSpeak.writeFields( TSChannel, writeAPIKey );
+  return writeSuccess;
+}
+
+
+
+BLYNK_WRITE(V4) {
+  int button = param.asInt();
+  if (button == 1) {
+   iotsend=1;
+  }
+  else{iotsend=0;}
+}
